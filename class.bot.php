@@ -1,11 +1,34 @@
 <?
 	class Bot {
-
+		/**
+		 * IRC Server
+		 * @var string
+		 */
 		protected $_server = null;
+		/**
+		 * IRC Port
+		 * @var int
+		 */
 		protected $_port = null;
+		/**
+		 * IRC Bot NICK
+		 * @var string
+		 */
 		protected $_nick = null;
+		/**
+		 * IRC BOT Gecos / Real name
+		 * @var string
+		 */
 		protected $_gecos = null;
+		/**
+		 * List of channels
+		 * @var array
+		 */
 		protected $_channelsArray = array();
+		/**
+		 * Socket connection 
+		 * @var socket
+		 */
 		private $_socket;
 
 		public function __construct($configArray = array() ) {
