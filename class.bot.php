@@ -1,4 +1,10 @@
 <?
+	/**
+	 * IRC Robot Class
+	 * @author jfreeman
+	 * @since 8.7.2012
+	 * @version $Id
+	 */
 	class Bot {
 		/**
 		 * IRC Server
@@ -30,6 +36,7 @@
 		 * @var socket
 		 */
 		private $_socket;
+		
 
 		public function __construct($configArray = array() ) {
 
@@ -155,8 +162,13 @@
 			while ( $this->_socket ) {
 
 				$data = fgets($this->_socket, 128);
-
 				print $data ."\r\n";
+				
+				$this->_handleCommand($data);
 			}
+		}
+		
+		protected function _handleCommand($data) {
+			$dataArray = explode(' ', $data);
 		}
 	}
