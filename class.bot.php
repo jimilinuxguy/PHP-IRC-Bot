@@ -58,6 +58,17 @@ ini_set('display_errors',true);
 		 */
 		public $verbose = false;
 		
+		/**
+		 * Data string from IRC socket
+		 * @var string
+		 */
+		protected $_data = null;
+		/**
+		 * Split on spaces to parse easier
+		 * @var array
+		 */
+		protected $_dataArray = array();
+		
 		public function __construct($configArray = array() ) {
 			
 			if ( isset($configArray['mysqlHost']) && isset($configArray['mysqlDB'])) {
@@ -102,6 +113,7 @@ ini_set('display_errors',true);
 				$this->_server = $server; 
 				return true;
 			} else {
+				$this->_log("Invalid Server Parameter");
 				throw new Exception("Invalid Server Parameter");
 				return false;
 			}
@@ -116,6 +128,7 @@ ini_set('display_errors',true);
 				$this->_port = $port;
 				return true;
 			}  else {
+				$this->_log("Invalid Port Parameter");				
 				throw new Exception("Invalid Port Parameter");
 				return false;
 			}
@@ -126,6 +139,7 @@ ini_set('display_errors',true);
 				$this->_nick =  $nick;
 				return true;
 			} else {
+				$this->_log("Invalid Nick Parameter");
 				throw new Exception("Invalid Nick Parameter");
 				return false;
 			}
@@ -138,6 +152,7 @@ ini_set('display_errors',true);
 				$this->_gecos = $gecos;
 				return true;
 			} else {
+				$this->_log("Invalid Gecos Parameter");
 				throw new Exception("Invalid Gecos Parameter");
 				return false;
 			}
@@ -149,6 +164,7 @@ ini_set('display_errors',true);
 		public function connect() {
 
 				if ( !$this->_server || !$this->_port ) {
+					$this->_log("Invalid server / port combination");
 					throw new Exception("Invalid server / port combination"); 
 				} else {
 					 $this->_socket = fsockopen($this->_server, $this->_port) ;
@@ -160,7 +176,7 @@ ini_set('display_errors',true);
 
 			$this->_send_data('NICK ' . $this->get_nick() );
 			$this->_send_data('USER ' . $this->get_nick() . ' ' . $this->get_server() . ' ' . true . ' :' . $this->get_gecos() );
-			$this->_join_channel('#testes');
+			$this->_join_channel('#jimi');
 		}
 		protected function _send_data($cmd, $msg = null) {
 
@@ -192,6 +208,7 @@ ini_set('display_errors',true);
 			} else {
 				return false;
 			}
+			
 		}
 
 
@@ -205,39 +222,80 @@ ini_set('display_errors',true);
 
 			while ( $this->_socket ) {
 
-				$data = fgets($this->_socket, 128);
-
-				$data = trim($data);
-				
-				if ( $this->verbose ) {
-
-					$this->_log($data);					
-				}
-				
-				$this->_handleCommand($data);
+				$this->_data = trim(fgets($this->_socket, 128));
+				$this->_dataArray = explode(' ', $this->_data);
+				$this->_log($this->_data);					
+			
+				$this->_handleCommand();
 			}
 		}
 		
-		protected function _handleCommand($data) {
-			$dataArray = explode(' ', $data);
+		protected function _handleCommand() {
 			
-			// if we receive a PING request fromt he server
-			if ($dataArray[0] == 'PING') {
-				// send the pong response.
-				$this->_doPing($dataArray[1]);
-			}
-			
+			switch($this->_dataArray[0]) {
 
-			if ( isset($dataArray[3]) &&  $dataArray[3] == ':!auth') {
-				// username password
-				$this->_doAuth($dataArray[0],$dataArray[4],$dataArray[5]);
+				// if we receive a PING request fromt he server
+				case 'PING':
+					// send the pong response.
+					$this->_doPing($this->_dataArray[1]);
+					break;
 			}
 			
+			// commands ... 
+			if ( isset($this->_dataArray[3])) {
+
+				switch($this->_dataArray[3]) {
+					case ':!auth':
+						$this->_doAuth($this->_dataArray[0],$this->_dataArray[4],$this->_dataArray[5]);
+						break;
+					case ':!names':
+						$this->_get_names_by_channel($this->_dataArray[4]);
+						break;
+				}
+				// karma ... looking for something folloed by ++
+				if ( preg_match('/:(.*)\+\+/', $this->_dataArray[3], $matches)) {
+					
+					$this->increase_karma_by_nick($matches[1]);
+				}
+				if ( preg_match('/:(.*)\-\-/', $this->_dataArray[3], $matches)) {
+					
+					$this->decrease_karma_by_nick($matches[1]);
+					
+				}
+				
+				
+			}
+			
+			if ( isset($this->_dataArray[1])) {
+				
+				switch($this->_dataArray[1]) {
+					
+					case '353':
+						$this->_handleNames();
+						break;
+					case 'JOIN':
+						$this->_handleJoin();
+						break;
+					case 'PART':
+						$this->_handlePart();
+						break;
+					case 'QUIT':
+						break;
+				}
+				
+			}
 		}
 		
 		protected function _doPing($pong) {
 			
 			$this->_send_data('PONG ' . $pong);
+			$this->_log('PONG ' . $pong);
+		}
+		
+		protected function _say($message) {
+			
+			$this->_sendPrivateMessage($this->_dataArray[2], $message);
+			
 		}
 		
 		protected function _sendPrivateMessage($target,$message) {
@@ -270,6 +328,58 @@ ini_set('display_errors',true);
 			}
 		}
 		
+		protected function _get_names_by_channel($channel) { 
+			
+			$this->_send_data('NAMES ' . $channel);
+			
+		}
+		
+		protected function _handleNames() {
+			
+			$channel = $this->_dataArray[4];
+			
+			$tmp = explode(':', $this->_data);
+
+			$users = explode(' ', $tmp[2]);
+			
+			foreach ($users as $user) {
+				
+				$user = str_replace('@','', $user);
+				$user = str_replace('+','', $user);
+
+				$this->_channelsArray[$channel]['users'][$user] = true;
+			}
+		
+		}
+		protected function _handleJoin() {
+			
+			
+			$dataArray[0] = str_replace(':', '', $this->_dataArray[0]);
+			$tmp = explode('!', $this->_dataArray[0]);
+			$nick = $tmp[0];
+			$channel = $this->_dataArray[2];
+			
+			$this->_channelsArray[$channel]['users'][$nick] = true;
+			
+		}
+
+		protected function _handlePart() {
+				
+				
+			$dataArray[0] = str_replace(':', '', $this->_dataArray[0]);
+			$tmp = explode('!', $this->_dataArray[0]);
+			$nick = $tmp[0];
+			$channel = $this->_dataArray[2];
+				
+			unset($this->_channelsArray[$channel]['users'][$nick]);
+				
+		}
+		public function increase_karma_by_nick($nick) {
+			
+		}
+		public function decrease_karma_by_nick($nick) {
+			
+		}
 		protected function _log($data) {
 			
 			// only display if we verbosity is turned on
